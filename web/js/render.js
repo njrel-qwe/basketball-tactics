@@ -1,9 +1,9 @@
 // Отрисовка площадки, линий, игроков и мяча на Canvas 2D.
 import { COURT, Poly, Geometry, add, len, mul, pt, sub } from './geometry.js';
-import { BALL_R, TOKEN_R, interpolate } from './model.js';
+import { BALL_OFFSET, BALL_R, TOKEN_R, interpolate } from './model.js';
 
 export const COLORS = {
-  surround: '#2e4a3a',
+  surround: '#cf9a63', // пол за линиями площадки
   floor: '#e6b47f',
   paint: '#c8743e',
   lines: '#ffffff',
@@ -69,7 +69,7 @@ function halfMarkings(ctx, g, flip) {
 }
 
 export function drawCourt(ctx, g) {
-  const r = g.boardRect;
+  const r = g.rect;
   ctx.fillStyle = COLORS.surround;
   ctx.fillRect(r.x, r.y, r.w, r.h);
   const floor = g.rectOf(0, 0, COURT.WIDTH, g.length);
@@ -236,6 +236,15 @@ export function drawBall(ctx, g, p, highlight, minR = 0) {
 export const BALL_ID = '__ball__';
 
 /**
+ * Смещение мяча от центра владельца (в метрах): на экране мяч всегда у правого верхнего
+ * края фишки, даже если площадка повёрнута или фишка крупнее своего размера в метрах.
+ */
+export function ballOffset(g, minR = 0) {
+  const k = Math.max(1, minR / g.px(TOKEN_R));
+  return g.rot ? { x: -BALL_OFFSET.y * k, y: BALL_OFFSET.x * k } : { x: BALL_OFFSET.x * k, y: BALL_OFFSET.y * k };
+}
+
+/**
  * Полная отрисовка доски в прямоугольнике rect.
  * opts: { next, progress, draft, highlight, dimLines }
  */
@@ -243,10 +252,11 @@ export function drawBoard(ctx, rect, court, frame, opts = {}) {
   const g = new Geometry(rect, court, opts.rotate ?? 'auto');
   drawCourt(ctx, g);
   const animating = opts.next && opts.progress > 0;
-  const rs = animating ? interpolate(frame, opts.next, opts.progress) : interpolate(frame, null, 0);
+  const minR = opts.minTokenPx || 0;
+  const off = ballOffset(g, minR);
+  const rs = animating ? interpolate(frame, opts.next, opts.progress, off) : interpolate(frame, null, 0, off);
   for (const l of frame.lines) drawLine(ctx, g, l, rs.tokens, animating ? 0.3 : 1);
   if (opts.draft && !animating) drawLine(ctx, g, opts.draft, rs.tokens, 0.75);
-  const minR = opts.minTokenPx || 0;
   for (const t of rs.tokens) drawToken(ctx, g, t, !animating && t.id === opts.highlight, minR);
   if (rs.ball) drawBall(ctx, g, rs.ball, !animating && opts.highlight === BALL_ID, minR * 0.55);
   return g;

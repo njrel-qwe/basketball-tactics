@@ -61,10 +61,11 @@ export function passLine(frame) {
   return null;
 }
 
-export function ballPosition(ball, tokens) {
+/** off — смещение мяча от центра игрока-владельца (зависит от поворота и размера фишек). */
+export function ballPosition(ball, tokens, off = BALL_OFFSET) {
   if (!ball) return null;
   const owner = ball.owner && tokens.find((t) => t.id === ball.owner);
-  return owner ? add(owner, BALL_OFFSET) : pt(ball.x, ball.y);
+  return owner ? add(owner, off) : pt(ball.x, ball.y);
 }
 
 /** Следующий шаг: игроки уходят в концы своих линий, мяч — к адресату передачи. */
@@ -93,8 +94,8 @@ const smoothstep = (v) => {
 };
 
 /** Позиции игроков и мяча в момент t анимации перехода a → b. */
-export function interpolate(a, b, t) {
-  if (!b || t <= 0) return { tokens: a.tokens, ball: ballPosition(a.ball, a.tokens) };
+export function interpolate(a, b, t, off = BALL_OFFSET) {
+  if (!b || t <= 0) return { tokens: a.tokens, ball: ballPosition(a.ball, a.tokens, off) };
   const tokens = [];
   for (const ta of a.tokens) {
     const tb = findToken(b, ta.id);
@@ -107,13 +108,13 @@ export function interpolate(a, b, t) {
 
   let ball = null;
   if (a.ball && b.ball) {
-    const start = ballPosition(a.ball, tokens);
-    const end = ballPosition(b.ball, tokens) || start;
+    const start = ballPosition(a.ball, tokens, off);
+    const end = ballPosition(b.ball, tokens, off) || start;
     if (a.ball.owner && a.ball.owner === b.ball.owner) ball = start;
     else if (passLine(a)) ball = lerp(start, end, smoothstep((t - 0.25) / 0.5));
     else ball = lerp(start, end, t);
-  } else if (a.ball && t < 0.5) ball = ballPosition(a.ball, tokens);
-  else if (b.ball && t >= 0.5) ball = ballPosition(b.ball, tokens);
+  } else if (a.ball && t < 0.5) ball = ballPosition(a.ball, tokens, off);
+  else if (b.ball && t >= 0.5) ball = ballPosition(b.ball, tokens, off);
   return { tokens, ball };
 }
 

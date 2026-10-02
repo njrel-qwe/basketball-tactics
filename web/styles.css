@@ -127,7 +127,7 @@ button.bar-title:active { background: var(--surface-2); }
 canvas.board { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
 
 .editor { padding: 0; }
-.editor .board-wrap { background: #2e4a3a; }
+.editor .board-wrap { background: #cf9a63; }
 .editor canvas.board {
   inset: var(--sat) var(--sar) 0 var(--sal);
   width: calc(100% - var(--sal) - var(--sar));

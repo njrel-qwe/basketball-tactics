@@ -4,7 +4,7 @@ import {
   BALL_OFFSET, BALL_R, CATEGORIES, HOME_SPOTS, MOVEMENT, TOKEN_R,
   advance, ballPosition, clone, guardSpot, hitToken, newId, startingFrame, token,
 } from './model.js';
-import { BALL_ID, drawBoard } from './render.js';
+import { BALL_ID, ballOffset, drawBoard } from './render.js';
 import { StepPlayer } from './player.js';
 import { renderSheet, renderStep } from './exporter.js';
 import { offerFile, safeFileName, shareJsonFile, shareTacticLink } from './share.js';
@@ -20,6 +20,8 @@ const TOOLS = [
   { id: 'screen', label: 'Заслон', icon: 'screen', hint: 'Проведите от игрока к месту, где он поставит заслон.' },
   { id: 'eraser', label: 'Ластик', icon: 'eraser', hint: 'Коснитесь линии или игрока (или проведите по ним), чтобы удалить.' },
 ];
+const MIN_TOKEN_PX = 14; // фишки на экране не мельче этого радиуса
+const MAGNET = 2.0; // на каком расстоянии (м) мяч и пас «примагничиваются» к игроку
 const LINE_NAMES = { move: 'Бег', dribble: 'Ведение', pass: 'Передача', screen: 'Заслон' };
 
 export function openEditor(root, { tactic: initial, onBack, onSave }) {
@@ -220,8 +222,22 @@ export function openEditor(root, { tactic: initial, onBack, onSave }) {
   let dragOffset = pt(0, 0);
   let eraseCheckpointed = false;
 
+  /**
+   * Кому достанется мяч/пас в точке p: ближайший игрок той же команды в радиусе MAGNET,
+   * а соперник — только если отпустить прямо на нём (перехват).
+   */
+  const receiverAt = (f, p, team = 'home', exclude = null) => {
+    const near = (pred, radius) => f.tokens
+      .filter((t) => t.id !== exclude && pred(t) && dist(t, p) <= radius)
+      .sort((a, b) => dist(a, p) - dist(b, p))[0] || null;
+    const mate = near((t) => t.team === team, MAGNET);
+    const rival = near((t) => t.team !== team, TOKEN_R + 0.35);
+    if (rival && (!mate || dist(rival, p) < dist(mate, p))) return rival;
+    return mate;
+  };
+  const ballPos = (f) => ballPosition(f.ball, f.tokens, geom ? ballOffset(geom, MIN_TOKEN_PX) : undefined);
   const hitBall = (p) => {
-    const bp = ballPosition(frame().ball, frame().tokens);
+    const bp = ballPos(frame());
     return bp && dist(bp, p) <= BALL_R + 0.35;
   };
   const hitLine = (p, max = 0.5) => {
@@ -288,7 +304,7 @@ export function openEditor(root, { tactic: initial, onBack, onSave }) {
       highlight = dragTarget;
       if (dragTarget) {
         checkpoint();
-        const pos = dragTarget === BALL_ID ? ballPosition(f.ball, f.tokens) : f.tokens.find((t) => t.id === dragTarget);
+        const pos = dragTarget === BALL_ID ? ballPos(f) : f.tokens.find((t) => t.id === dragTarget);
         dragOffset = sub(pt(pos.x, pos.y), p);
       }
     } else if (tool === 'eraser') {
@@ -309,6 +325,8 @@ export function openEditor(root, { tactic: initial, onBack, onSave }) {
       const target = geom.clamp(add(p, dragOffset));
       if (dragTarget === BALL_ID) {
         f.ball = { owner: null, x: target.x, y: target.y };
+        // подсвечиваем игрока, которому достанется мяч
+        highlight = receiverAt(f, target)?.id || BALL_ID;
       } else {
         const tok = f.tokens.find((t) => t.id === dragTarget);
         if (!tok) return;
@@ -331,9 +349,13 @@ export function openEditor(root, { tactic: initial, onBack, onSave }) {
     const f = frame();
     if (tool === 'select') {
       if (dragTarget === BALL_ID) {
-        const bp = ballPosition(f.ball, f.tokens);
-        const owner = bp && hitToken(f, bp, TOKEN_R + 0.6);
-        if (owner) f.ball = { owner: owner.id };
+        const owner = receiverAt(f, pt(f.ball.x, f.ball.y));
+        if (owner) {
+          f.ball = { owner: owner.id };
+          vibrate(15);
+        } else {
+          showHint('Мяч лежит на полу. Перетащите его ближе к игроку — он окажется у него в руках.');
+        }
       }
       if (dragTarget) scheduleSave();
       dragTarget = null;
@@ -348,17 +370,20 @@ export function openEditor(root, { tactic: initial, onBack, onSave }) {
         let pts = straight ? d.points : Poly.simplify(d.points, 0.05);
         if (pts.length < 2) pts = [d.points[0], d.points[d.points.length - 1]];
         const end = pts[pts.length - 1];
-        let target = hitToken(f, end, TOKEN_R + 0.5, d.from);
+        const passer = f.tokens.find((t) => t.id === d.from);
+        let target = d.type === 'pass' ? receiverAt(f, end, passer?.team || 'home', d.from) : null;
         if (d.type === 'pass') {
           // пас в точку, куда игрок прибежит по своей стрелке
           const runEnd = f.lines
             .filter((l) => MOVEMENT.has(l.type) && l.from && l.from !== d.from)
             .map((l) => ({ l, p: l.points[l.points.length - 1] }))
-            .filter((x) => dist(x.p, end) <= TOKEN_R + 0.5)
+            .filter((x) => dist(x.p, end) <= MAGNET)
             .sort((a, b) => dist(a.p, end) - dist(b.p, end))[0];
           if (runEnd && (!target || dist(runEnd.p, end) < dist(target, end))) {
             target = { id: runEnd.l.from, x: runEnd.p.x, y: runEnd.p.y };
           }
+          if (!target) showHint('Пас никому не адресован — мяч останется на полу. Доведите стрелку до игрока.');
+          else if (f.ball && f.ball.owner !== d.from) showHint('Пас начинается не от игрока с мячом — мяч не перейдёт.');
         }
         if (d.type === 'pass' && target) {
           // конец передачи «прилипает» к адресату
@@ -493,7 +518,7 @@ export function openEditor(root, { tactic: initial, onBack, onSave }) {
     const i = fi();
     const rotate = orientation === 'auto' ? 'auto' : orientation === 'horizontal';
     geom = drawBoard(ctx, { x: 0, y: 0, w, h: hgt }, tactic.court, fs[i], {
-      next: fs[i + 1], progress: player.progress, draft, highlight, rotate, minTokenPx: 14,
+      next: fs[i + 1], progress: player.progress, draft, highlight, rotate, minTokenPx: MIN_TOKEN_PX,
     });
   }
 

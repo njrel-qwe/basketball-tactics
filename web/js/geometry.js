@@ -38,6 +38,14 @@ export class Geometry {
     const bh = (this.rot ? wM : hM) * this.scale;
     this.left = rect.x + (rect.w - bw) / 2;
     this.top = rect.y + (rect.h - bh) / 2;
+    this.rect = rect;
+    // видимая часть пола в метрах — туда тоже можно ставить игроков
+    const a = this.toCourt(rect.x, rect.y);
+    const b = this.toCourt(rect.x + rect.w, rect.y + rect.h);
+    this.visible = {
+      x0: Math.min(a.x, b.x), x1: Math.max(a.x, b.x),
+      y0: Math.min(a.y, b.y), y1: Math.max(a.y, b.y),
+    };
   }
   toScreen(p) {
     const s = this.scale, M = COURT.MARGIN;
@@ -51,11 +59,12 @@ export class Geometry {
     return { x: COURT.WIDTH + M - (y - this.top) / s, y: (x - this.left) / s - M };
   }
   px(m) { return m * this.scale; }
+  /** Ограничение точкой внутри видимого пола (с небольшим отступом от края экрана). */
   clamp(p) {
-    const m = COURT.MARGIN - 0.3;
+    const v = this.visible, m = 0.4;
     return {
-      x: Math.min(Math.max(p.x, -m), COURT.WIDTH + m),
-      y: Math.min(Math.max(p.y, -m), this.length + m),
+      x: Math.min(Math.max(p.x, v.x0 + m), v.x1 - m),
+      y: Math.min(Math.max(p.y, v.y0 + m), v.y1 - m),
     };
   }
   /** Прямоугольник экрана для прямоугольника площадки (x0,y0)-(x1,y1) в метрах. */

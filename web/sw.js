@@ -1,6 +1,6 @@
 // Офлайн-работа: файлы приложения кэшируются при установке.
 // При изменении файлов увеличьте VERSION, чтобы телефоны получили обновление.
-const VERSION = 'v2';
+const VERSION = 'v3';
 const CACHE = `tacticboard-${VERSION}`;
 const FILES = [
   './',
