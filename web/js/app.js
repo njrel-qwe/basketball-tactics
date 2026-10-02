@@ -2,11 +2,12 @@
 import { CATEGORIES, newTactic, plural } from './model.js';
 import { drawBoard, drawThumb } from './render.js';
 import { PLAYBOOK, findPlay } from './playbook.js';
-import { decodeTactic, duplicate, loadTactics, parseImport, requestPersistence, saveTactics } from './storage.js';
+import { SPEEDS, decodeTactic, duplicate, getPref, loadTactics, parseImport, requestPersistence, saveTactics, setPref, speedLabel } from './storage.js';
 import { openEditor } from './editor.js';
 import { StepPlayer } from './player.js';
-import { safeFileName, shareJsonFile, shareTacticLink } from './share.js';
-import { confirmDialog, esc, form, h, icon, infoDialog, sheet, toast } from './ui.js';
+import { offerFile, safeFileName, shareJsonFile, shareTacticLink } from './share.js';
+import { recordVideo, videoSupported } from './video.js';
+import { confirmDialog, esc, form, h, icon, infoDialog, progressDialog, sheet, toast } from './ui.js';
 
 const app = document.getElementById('app');
 let tactics = loadTactics();
@@ -214,7 +215,7 @@ function newTacticDialog() {
   form('Новая тактика', [
     { name: 'name', label: 'Название', placeholder: 'Например, «Атака против зоны 2-3»', required: true },
     { name: 'category', label: 'Категория', type: 'chips', options: CATEGORIES, value: 'Нападение', toggle: true },
-    { name: 'court', label: 'Площадка', type: 'chips', options: [['half', 'Половина'], ['full', 'Вся']], value: 'half' },
+    { name: 'court', label: 'Площадка', type: 'chips', options: [['full', 'Вся'], ['half', 'Половина']], value: 'full' },
     { name: 'setup', label: 'Расстановка', type: 'chips', options: [['55', '5 на 5'], ['50', '5 нападающих'], ['00', 'Пусто']], value: '55' },
   ], {
     submit: 'Создать',
@@ -287,6 +288,7 @@ function showPlay(entry) {
     <header class="bar">
       <button class="icon-btn" data-act="back" aria-label="Назад">${icon('back')}</button>
       <div class="bar-title static"><span>${esc(t.name)}</span><small>${esc(t.category)}</small></div>
+      <button class="icon-btn" data-act="video" aria-label="Сохранить видео">${icon('video')}</button>
       <button class="icon-btn" data-act="copy" aria-label="Скопировать к себе">${icon('copy')}</button>
     </header>
     <div class="play-layout">
@@ -297,6 +299,7 @@ function showPlay(entry) {
           <button class="icon-btn" data-act="prev">${icon('prev')}</button>
           <button class="play-btn" data-act="play">${icon('play')}</button>
           <button class="icon-btn" data-act="next">${icon('next')}</button>
+          <button class="speed-pill" data-act="speed"></button>
           <span class="step-label"></span>
         </div>
         <div class="step-note"></div>
@@ -316,6 +319,7 @@ function showPlay(entry) {
   const ctx = canvas.getContext('2d');
   const frames = () => t.variants[vi].frames;
   const player = new StepPlayer(() => { paint(); update(); });
+  player.speed = getPref('speed', 1);
 
   function paint() {
     const dpr = window.devicePixelRatio || 1;
@@ -326,7 +330,7 @@ function showPlay(entry) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const fs = frames();
     const i = Math.min(player.index, fs.length - 1);
-    drawBoard(ctx, { x: 0, y: 0, w, h: hh }, t.court, fs[i], { next: fs[i + 1], progress: player.progress });
+    drawBoard(ctx, { x: 0, y: 0, w, h: hh }, t.court, fs[i], { next: fs[i + 1], progress: player.progress, minTokenPx: 12 });
   }
   function update() {
     const fs = frames();
@@ -336,6 +340,22 @@ function showPlay(entry) {
     el.querySelector('[data-act="play"]').innerHTML = icon(player.playing ? 'pause' : 'play');
     el.querySelector('[data-act="prev"]').disabled = i === 0;
     el.querySelector('[data-act="next"]').disabled = i >= fs.length - 1;
+    el.querySelector('[data-act="speed"]').textContent = speedLabel(player.speed);
+  }
+  async function saveVideo() {
+    if (!videoSupported()) return toast('Этот браузер не умеет записывать видео');
+    player.stop();
+    const ctrl = new AbortController();
+    const pd = progressDialog(`Запись видео · скорость ${speedLabel(player.speed)}`, () => ctrl.abort());
+    try {
+      const res = await recordVideo(t, t.variants[vi], { speed: player.speed, onProgress: (p) => pd.set(p), signal: ctrl.signal });
+      if (!res || pd.cancelled) return;
+      await pd.finish();
+      offerFile(res.blob, `${safeFileName(t.name)}.${res.ext}`, { title: 'Видео готово', kind: 'video' });
+    } catch (e) {
+      await pd.finish();
+      toast(`Не удалось записать видео: ${e.message}`);
+    }
   }
   function renderVariants() {
     const v = el.querySelector('.variants');
@@ -364,6 +384,12 @@ function showPlay(entry) {
       case 'prev': player.prev(); break;
       case 'next': player.next(n); break;
       case 'play': player.toggle(n); break;
+      case 'video': saveVideo(); break;
+      case 'speed':
+        player.speed = SPEEDS[(SPEEDS.indexOf(player.speed) + 1) % SPEEDS.length];
+        setPref('speed', player.speed);
+        update();
+        break;
       default: break;
     }
   });

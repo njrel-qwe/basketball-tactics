@@ -88,3 +88,21 @@ export async function decodeTactic(code) {
   if (!isTactic(t)) throw new Error('Некорректная ссылка');
   return t;
 }
+
+// ---------- Настройки этого устройства ----------
+
+export function getPref(name, fallback) {
+  try {
+    const v = localStorage.getItem(`tacticboard.pref.${name}`);
+    return v === null ? fallback : JSON.parse(v);
+  } catch {
+    return fallback;
+  }
+}
+
+export function setPref(name, value) {
+  try { localStorage.setItem(`tacticboard.pref.${name}`, JSON.stringify(value)); } catch { /* приватный режим */ }
+}
+
+export const SPEEDS = [0.5, 1, 2];
+export const speedLabel = (s) => `${s}×`;

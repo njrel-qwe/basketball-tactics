@@ -19,19 +19,37 @@ export const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 export const len = (a) => Math.hypot(a.x, a.y);
 export const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
 
-/** Перевод метров в пиксели и обратно для области `rect` = {x, y, w, h}. */
+/**
+ * Перевод метров в пиксели и обратно для области `rect` = {x, y, w, h}.
+ * rotate: 'auto' — площадка ложится боком (кольцо слева), если так она крупнее;
+ * true/false — принудительно.
+ */
 export class Geometry {
-  constructor(rect, court) {
+  constructor(rect, court, rotate = 'auto') {
     this.court = court;
     this.length = courtLength(court);
     const wM = COURT.WIDTH + 2 * COURT.MARGIN;
     const hM = this.length + 2 * COURT.MARGIN;
-    this.scale = Math.min(rect.w / wM, rect.h / hM);
-    this.ox = rect.x + (rect.w - wM * this.scale) / 2 + COURT.MARGIN * this.scale;
-    this.oy = rect.y + (rect.h - hM * this.scale) / 2 + COURT.MARGIN * this.scale;
+    const normal = Math.min(rect.w / wM, rect.h / hM);
+    const rotated = Math.min(rect.w / hM, rect.h / wM);
+    this.rot = rotate === true || (rotate === 'auto' && rotated > normal * 1.08);
+    this.scale = this.rot ? rotated : normal;
+    const bw = (this.rot ? hM : wM) * this.scale;
+    const bh = (this.rot ? wM : hM) * this.scale;
+    this.left = rect.x + (rect.w - bw) / 2;
+    this.top = rect.y + (rect.h - bh) / 2;
   }
-  toScreen(p) { return { x: this.ox + p.x * this.scale, y: this.oy + p.y * this.scale }; }
-  toCourt(x, y) { return { x: (x - this.ox) / this.scale, y: (y - this.oy) / this.scale }; }
+  toScreen(p) {
+    const s = this.scale, M = COURT.MARGIN;
+    if (!this.rot) return { x: this.left + (p.x + M) * s, y: this.top + (p.y + M) * s };
+    // поворот на 90° против часовой: лицевая линия слева, левая боковая — внизу
+    return { x: this.left + (p.y + M) * s, y: this.top + (COURT.WIDTH + M - p.x) * s };
+  }
+  toCourt(x, y) {
+    const s = this.scale, M = COURT.MARGIN;
+    if (!this.rot) return { x: (x - this.left) / s - M, y: (y - this.top) / s - M };
+    return { x: COURT.WIDTH + M - (y - this.top) / s, y: (x - this.left) / s - M };
+  }
   px(m) { return m * this.scale; }
   clamp(p) {
     const m = COURT.MARGIN - 0.3;
@@ -40,10 +58,14 @@ export class Geometry {
       y: Math.min(Math.max(p.y, -m), this.length + m),
     };
   }
+  /** Прямоугольник экрана для прямоугольника площадки (x0,y0)-(x1,y1) в метрах. */
+  rectOf(x0, y0, x1, y1) {
+    const a = this.toScreen(pt(x0, y0));
+    const b = this.toScreen(pt(x1, y1));
+    return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) };
+  }
   get boardRect() {
-    const a = this.toScreen(pt(-COURT.MARGIN, -COURT.MARGIN));
-    const b = this.toScreen(pt(COURT.WIDTH + COURT.MARGIN, this.length + COURT.MARGIN));
-    return { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y };
+    return this.rectOf(-COURT.MARGIN, -COURT.MARGIN, COURT.WIDTH + COURT.MARGIN, this.length + COURT.MARGIN);
   }
 }
 

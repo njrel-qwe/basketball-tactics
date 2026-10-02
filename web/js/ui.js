@@ -34,6 +34,7 @@ export const ICONS = {
   court: S('<rect x="3" y="3" width="18" height="18" rx="1.5"/><path d="M3 12h18"/><circle cx="12" cy="12" r="3"/>'),
   sweep: P('M15 16h4v2h-4zm0-8h7v2h-7zm0 4h6v2h-6zM3 18c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2V8H3v10zM14 5h-3l-1-1H6L5 5H2v2h12z'),
   help: P('M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.54 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z'),
+  video: P('M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z'),
   link: P('M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z'),
   // стили линий
   move: S('<path d="M3 12h14"/>') + '<path d="M22 12l-6-4.5v9z"/>',
@@ -70,6 +71,8 @@ export function toast(text, ms = 2200) {
 }
 
 // ---------- Слой поверх экрана ----------
+
+export function openOverlay(content, opts) { return overlay(content, opts); }
 
 function overlay(content, { onClose, kind = 'sheet' } = {}) {
   const root = h(`<div class="overlay ${kind}"><div class="scrim"></div></div>`);
@@ -117,7 +120,9 @@ export function sheet(title, items) {
     if (it === 'divider') { list.append(h('<div class="divider"></div>')); continue; }
     const b = h(`<button class="sheet-item ${it.danger ? 'danger' : ''} ${it.active ? 'active' : ''}" ${it.disabled ? 'disabled' : ''}>
       ${it.icon ? icon(it.icon) : '<span class="ic"></span>'}<span>${esc(it.label)}</span></button>`);
-    b.addEventListener('click', () => { close().then(() => it.action?.()); });
+    b.addEventListener('click', () => {
+      if (it.immediate) { close(); it.action?.(); } else close().then(() => it.action?.());
+    });
     list.append(b);
   }
   return close;
@@ -194,4 +199,22 @@ export function infoDialog(title, html) {
     <div class="dialog-actions"><button class="btn filled" data-ok>Понятно</button></div></div>`);
   const close = overlay(box, { kind: 'dialog' });
   box.querySelector('[data-ok]').addEventListener('click', close);
+}
+
+/** Окно с прогрессом и кнопкой «Отмена». */
+export function progressDialog(title, onCancel) {
+  const box = h(`<div class="dialog-box">
+    <div class="dialog-title">${esc(title)}</div>
+    <div class="progress"><div class="progress-bar"></div></div>
+    <p class="muted small">Не сворачивайте приложение до окончания записи.</p>
+    <div class="dialog-actions"><button class="btn text" data-cancel>Отмена</button></div></div>`);
+  let cancelled = false;
+  const close = overlay(box, { kind: 'dialog', onClose: () => { if (!done) { cancelled = true; onCancel?.(); } } });
+  let done = false;
+  box.querySelector('[data-cancel]').addEventListener('click', close);
+  return {
+    set(p) { box.querySelector('.progress-bar').style.width = `${Math.round(p * 100)}%`; },
+    finish() { done = true; return close(); },
+    get cancelled() { return cancelled; },
+  };
 }

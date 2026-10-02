@@ -45,10 +45,9 @@ function halfMarkings(ctx, g, flip) {
   const b = COURT.BASKET;
   const y = (v) => (flip ? g.length - v : v);
 
-  const tl = g.toScreen(pt(5.05, Math.min(y(0), y(5.8))));
-  const br = g.toScreen(pt(9.95, Math.max(y(0), y(5.8))));
+  const paint = g.rectOf(5.05, y(0), 9.95, y(5.8));
   ctx.fillStyle = COLORS.paint;
-  ctx.fillRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
+  ctx.fillRect(paint.x, paint.y, paint.w, paint.h);
   polyline(ctx, g, [pt(5.05, 0), pt(5.05, 5.8), pt(9.95, 5.8), pt(9.95, 0)], flip, c, w);
   for (const m of [1.75, 2.85, 3.7, 4.55]) {
     polyline(ctx, g, [pt(4.85, m), pt(5.05, m)], flip, c, w);
@@ -73,10 +72,9 @@ export function drawCourt(ctx, g) {
   const r = g.boardRect;
   ctx.fillStyle = COLORS.surround;
   ctx.fillRect(r.x, r.y, r.w, r.h);
-  const tl = g.toScreen(pt(0, 0));
-  const br = g.toScreen(pt(COURT.WIDTH, g.length));
+  const floor = g.rectOf(0, 0, COURT.WIDTH, g.length);
   ctx.fillStyle = COLORS.floor;
-  ctx.fillRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
+  ctx.fillRect(floor.x, floor.y, floor.w, floor.h);
 
   halfMarkings(ctx, g, false);
   if (g.court === 'full') halfMarkings(ctx, g, true);
@@ -192,9 +190,9 @@ export function drawLine(ctx, g, line, tokens, alpha = 1) {
 
 // ---------- Фишки ----------
 
-export function drawToken(ctx, g, t, highlight) {
+export function drawToken(ctx, g, t, highlight, minR = 0) {
   const c = g.toScreen(t);
-  const r = g.px(TOKEN_R);
+  const r = Math.max(g.px(TOKEN_R), minR);
   ctx.fillStyle = 'rgba(0,0,0,0.25)';
   ctx.beginPath(); ctx.arc(c.x + r * 0.08, c.y + r * 0.12, r, 0, Math.PI * 2); ctx.fill();
   if (highlight) {
@@ -217,9 +215,9 @@ export function drawToken(ctx, g, t, highlight) {
   ctx.fillText(label, c.x, c.y + size * 0.05);
 }
 
-export function drawBall(ctx, g, p, highlight) {
+export function drawBall(ctx, g, p, highlight, minR = 0) {
   const c = g.toScreen(p);
-  const r = g.px(BALL_R);
+  const r = Math.max(g.px(BALL_R), minR);
   if (highlight) {
     ctx.fillStyle = COLORS.highlight;
     ctx.beginPath(); ctx.arc(c.x, c.y, r * 1.6, 0, Math.PI * 2); ctx.fill();
@@ -242,14 +240,15 @@ export const BALL_ID = '__ball__';
  * opts: { next, progress, draft, highlight, dimLines }
  */
 export function drawBoard(ctx, rect, court, frame, opts = {}) {
-  const g = new Geometry(rect, court);
+  const g = new Geometry(rect, court, opts.rotate ?? 'auto');
   drawCourt(ctx, g);
   const animating = opts.next && opts.progress > 0;
   const rs = animating ? interpolate(frame, opts.next, opts.progress) : interpolate(frame, null, 0);
   for (const l of frame.lines) drawLine(ctx, g, l, rs.tokens, animating ? 0.3 : 1);
   if (opts.draft && !animating) drawLine(ctx, g, opts.draft, rs.tokens, 0.75);
-  for (const t of rs.tokens) drawToken(ctx, g, t, !animating && t.id === opts.highlight);
-  if (rs.ball) drawBall(ctx, g, rs.ball, !animating && opts.highlight === BALL_ID);
+  const minR = opts.minTokenPx || 0;
+  for (const t of rs.tokens) drawToken(ctx, g, t, !animating && t.id === opts.highlight, minR);
+  if (rs.ball) drawBall(ctx, g, rs.ball, !animating && opts.highlight === BALL_ID, minR * 0.55);
   return g;
 }
 

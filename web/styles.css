@@ -121,23 +121,84 @@ button.bar-title:active { background: var(--surface-2); }
 .pill { padding: 6px 10px; border-radius: 16px; font-weight: 600; white-space: nowrap; }
 .pill:active { background: var(--surface-3); }
 
-/* ---------- Редактор ---------- */
+/* ---------- Редактор: большое поле, кнопки снизу ---------- */
 
 .board-wrap { position: relative; flex: 1; min-height: 0; overflow: hidden; }
-canvas.board { position: absolute; inset: 0; touch-action: none; display: block; }
+canvas.board { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
 
-.side { flex: none; display: flex; flex-direction: column; background: var(--bg); padding-bottom: var(--sab); }
-
-.note-row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 14px; min-height: 36px; text-align: left; color: var(--fg);
+.editor { padding: 0; }
+.editor .board-wrap { background: #2e4a3a; }
+.editor canvas.board {
+  inset: var(--sat) var(--sar) 0 var(--sal);
+  width: calc(100% - var(--sal) - var(--sar));
+  height: calc(100% - var(--sat));
 }
-.note-row .ic { width: 18px; height: 18px; color: var(--muted); }
-.note-row span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 14px; }
-.note-row i { color: var(--muted); font-style: normal; }
+
+.floats {
+  position: absolute; top: calc(6px + var(--sat));
+  display: flex; align-items: center; gap: 6px;
+  pointer-events: none; max-width: 70%;
+}
+.floats > * { pointer-events: auto; }
+.floats.top-left { left: calc(6px + var(--sal)); }
+.floats.top-right { right: calc(6px + var(--sar)); }
+.fbtn {
+  height: 36px; min-width: 36px; padding: 0 12px; border-radius: 18px;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  background: rgba(12, 18, 26, 0.62); color: #fff;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  font-size: 13px; font-weight: 600; white-space: nowrap;
+}
+.fbtn.round { width: 36px; padding: 0; }
+.fbtn .ic { width: 20px; height: 20px; }
+.fbtn:active:not(:disabled) { background: rgba(12, 18, 26, 0.9); }
+.fbtn[hidden] { display: none; }
+.fbtn.title { min-width: 0; overflow: hidden; }
+.fbtn.title .t-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.fbtn.title .t-var { color: var(--accent); font-weight: 500; flex: none; }
+.fbtn.title .t-var:empty { display: none; }
+
+.fnote {
+  position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
+  max-width: calc(100% - 24px); width: max-content;
+  background: rgba(12, 18, 26, 0.72); color: #fff;
+  padding: 6px 12px; border-radius: 12px; font-size: 13px; text-align: center;
+}
+.fnote[hidden] { display: none; }
+
+.controls {
+  flex: none; display: flex; flex-direction: column; gap: 2px;
+  background: var(--surface);
+  padding: 4px max(4px, var(--sar)) calc(4px + var(--sab)) max(4px, var(--sal));
+}
+.ctl-row { display: flex; align-items: center; gap: 2px; }
+.cbtn {
+  flex: 1 1 0; min-width: 0; height: 52px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  border-radius: 12px; font-size: 10px; color: var(--fg);
+}
+.cbtn .ic { width: 23px; height: 23px; }
+.cbtn span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.cbtn:active:not(:disabled) { background: var(--surface-3); }
+.cbtn.on { background: var(--accent); color: var(--accent-fg); }
+.cbtn.add .ic { color: var(--home); }
+.cbtn.add-step { color: var(--accent); font-weight: 600; }
+.cbtn.speed { font-size: 15px; font-weight: 700; color: var(--accent); }
+.playrow .play-btn { margin: 0 4px; }
+
+@media (orientation: landscape) {
+  .controls { flex-direction: row; align-items: center; gap: 4px; }
+  .ctl-row { flex: 1 1 0; }
+  .ctl-row.playrow { border-left: 1px solid var(--line); padding-left: 4px; }
+  .cbtn { height: 46px; }
+  .playrow .play-btn { width: 46px; height: 46px; }
+}
+@media (orientation: landscape) and (max-width: 760px) {
+  .cbtn span { display: none; }
+  .cbtn { height: 44px; }
+}
 
 .stepbar { display: flex; align-items: center; gap: 2px; padding: 2px 6px; min-height: 56px; }
-.stepbar .grow { flex: 1; }
 .play-btn {
   width: 52px; height: 52px; border-radius: 50%;
   background: var(--accent); color: var(--accent-fg);
@@ -146,31 +207,10 @@ canvas.board { position: absolute; inset: 0; touch-action: none; display: block;
 }
 .play-btn .ic { width: 30px; height: 30px; }
 .play-btn:active:not(:disabled) { transform: scale(0.94); }
-.speed { color: var(--muted); min-width: 40px; }
-.add-step {
-  display: inline-flex; align-items: center; gap: 4px;
-  height: 44px; padding: 0 14px 0 10px; border-radius: 22px;
-  background: var(--surface-2); color: var(--accent); font-weight: 600;
-}
-.add-step .ic { width: 20px; height: 20px; }
-
-.dock { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; padding: 2px 6px; }
-.dock.tools { background: var(--surface); padding-top: 6px; }
-.dock.actions { background: var(--surface); padding-bottom: 6px; }
-.dock button {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-  min-height: 56px; border-radius: 12px; font-size: 11px; color: var(--fg); min-width: 0;
-}
-.dock button span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.dock button:active { background: var(--surface-3); }
-.dock button.on { background: var(--accent); color: var(--accent-fg); }
-.ic-wrap { height: 26px; display: grid; place-items: center; }
-.ic-wrap.home { color: var(--home); }
-.ic-wrap.away { color: var(--away); }
-.ic-wrap.ball { color: #f57c00; }
+.speed-pill { min-width: 44px; height: 40px; border-radius: 20px; font-weight: 700; color: var(--accent); }
 
 .hint {
-  position: absolute; left: 50%; top: 8px; transform: translate(-50%, -8px);
+  position: absolute; left: 50%; top: calc(50px + var(--sat)); transform: translate(-50%, -8px);
   width: max-content; max-width: calc(100% - 24px);
   background: rgba(18, 24, 32, 0.9); color: #fff;
   padding: 8px 14px; border-radius: 14px; font-size: 13px; text-align: center;
@@ -178,52 +218,11 @@ canvas.board { position: absolute; inset: 0; touch-action: none; display: block;
 }
 .hint.show { opacity: 1; transform: translate(-50%, 0); }
 
-/* Режим показа */
-.present-ui { display: none; }
-.editor.presenting .bar, .editor.presenting .side, .editor.presenting .hint { display: none; }
-.editor.presenting { padding: 0; background: #000; }
-.editor.presenting .present-ui { display: block; }
-.present-close {
-  position: absolute; top: calc(8px + var(--sat)); right: calc(8px + var(--sar));
-  background: rgba(0, 0, 0, 0.55); color: #fff;
-}
-.present-ctrl {
-  position: absolute; left: 0; right: 0; bottom: 0;
-  display: flex; align-items: center; justify-content: center; gap: 18px;
-  padding: 10px 10px calc(14px + var(--sab));
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75) 40%);
-}
-.present-ctrl .icon-btn { color: #fff; }
-.present-ctrl .play-btn { width: 64px; height: 64px; }
-.present-ctrl .step-label { position: absolute; right: calc(16px + var(--sar)); bottom: calc(30px + var(--sab)); color: #fff; font-weight: 600; }
-.present-note {
-  position: absolute; left: 12px; right: 12px; bottom: calc(96px + var(--sab));
-  text-align: center; color: #fff; font-size: 16px; text-shadow: 0 1px 4px #000;
-  pointer-events: none;
-}
-.present-note:empty { display: none; }
-
-/* Альбомная ориентация / планшет: панель справа */
+/* Просмотр готовой комбинации в альбомной ориентации */
 @media (orientation: landscape) and (min-width: 600px) {
-  .editor { display: grid; grid-template-columns: 1fr minmax(300px, 360px); grid-template-rows: auto 1fr; }
-  .editor .bar { grid-column: 1 / -1; }
-  .editor .board-wrap { grid-column: 1; grid-row: 2; }
-  .editor .side { grid-column: 2; grid-row: 2; overflow-y: auto; background: var(--surface); padding-right: var(--sar); }
-  .editor .dock { padding-left: 4px; padding-right: 4px; }
-  .editor .dock button { font-size: 10px; }
-  .editor .stepbar .speed { display: none; }
-  .editor.presenting { display: flex; }
   .play-layout { flex-direction: row !important; }
-  .play-layout .board-wrap { flex: 1; }
-  .play-layout .play-side { width: 380px; flex: none; overflow-y: auto; }
-}
-@media (orientation: landscape) and (max-height: 500px) {
-  .editor .bar { min-height: 44px; }
-  .dock button { min-height: 50px; }
-  .stepbar { min-height: 50px; }
-  .editor .note-row { min-height: 30px; padding-top: 2px; padding-bottom: 2px; }
-  .editor .note-row span { -webkit-line-clamp: 1; }
-  .editor .variants { padding-top: 4px; padding-bottom: 2px; }
+  .play-layout .board-wrap { flex: 1; height: auto !important; }
+  .play-layout .play-side { width: 360px; flex: none; overflow-y: auto; }
 }
 
 /* ---------- Библиотека ---------- */
@@ -348,3 +347,8 @@ canvas.board { position: absolute; inset: 0; touch-action: none; display: block;
   transition: opacity 0.2s, transform 0.2s;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+.preview { display: block; width: 100%; max-height: 50vh; object-fit: contain; border-radius: 12px; background: #000; margin-bottom: 10px; }
+.small { font-size: 13px; }
+.progress { height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; margin: 8px 0 12px; }
+.progress-bar { height: 100%; width: 0; background: var(--accent); transition: width 0.2s linear; }

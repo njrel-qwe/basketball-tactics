@@ -1,6 +1,6 @@
 // Офлайн-работа: файлы приложения кэшируются при установке.
 // При изменении файлов увеличьте VERSION, чтобы телефоны получили обновление.
-const VERSION = 'v1';
+const VERSION = 'v2';
 const CACHE = `tacticboard-${VERSION}`;
 const FILES = [
   './',
@@ -18,6 +18,7 @@ const FILES = [
   'js/share.js',
   'js/storage.js',
   'js/ui.js',
+  'js/video.js',
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/apple-touch-icon.png',

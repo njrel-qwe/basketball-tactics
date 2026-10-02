@@ -6,9 +6,11 @@ import {
 } from './model.js';
 import { BALL_ID, drawBoard } from './render.js';
 import { StepPlayer } from './player.js';
-import { renderSheet, renderStep, shareOrDownload } from './exporter.js';
-import { safeFileName, shareJsonFile, shareTacticLink } from './share.js';
-import { confirmDialog, esc, form, h, icon, sheet, toast, vibrate } from './ui.js';
+import { renderSheet, renderStep } from './exporter.js';
+import { offerFile, safeFileName, shareJsonFile, shareTacticLink } from './share.js';
+import { SPEEDS, getPref, setPref, speedLabel } from './storage.js';
+import { recordVideo, videoSupported } from './video.js';
+import { confirmDialog, form, h, icon, progressDialog, sheet, toast, vibrate } from './ui.js';
 
 const TOOLS = [
   { id: 'select', label: 'Двигать', icon: 'hand', hint: 'Перетаскивайте игроков и мяч. Удержите палец на игроке или на пустом месте — откроется меню.' },
@@ -28,10 +30,11 @@ export function openEditor(root, { tactic: initial, onBack, onSave }) {
   let straight = false;
   let draft = null;
   let highlight = null;
-  let presenting = false;
+  let orientation = getPref('orientation', 'auto'); // auto | vertical | horizontal
   const undoStack = [];
   const redoStack = [];
   const player = new StepPlayer(() => { draw(); updateStepbar(); });
+  player.speed = getPref('speed', 1);
 
   const variant = () => tactic.variants[Math.min(vi, tactic.variants.length - 1)];
   const frames = () => variant().frames;
@@ -40,46 +43,30 @@ export function openEditor(root, { tactic: initial, onBack, onSave }) {
 
   // ---------- Разметка ----------
   const el = h(`<div class="screen editor">
-    <header class="bar">
-      <button class="icon-btn" data-act="back" aria-label="Назад">${icon('back')}</button>
-      <button class="bar-title" data-act="info"><span class="t-name"></span><small class="t-cat"></small></button>
-      <button class="icon-btn" data-act="undo" aria-label="Отменить">${icon('undo')}</button>
-      <button class="icon-btn" data-act="redo" aria-label="Повторить">${icon('redo')}</button>
-      <button class="icon-btn" data-act="more" aria-label="Ещё">${icon('more')}</button>
-    </header>
     <div class="board-wrap">
       <canvas class="board"></canvas>
+      <div class="floats top-left">
+        <button class="fbtn round" data-act="back" aria-label="Назад">${icon('back')}</button>
+        <button class="fbtn title" data-act="tactic-menu"><span class="t-name"></span><span class="t-var"></span></button>
+      </div>
+      <div class="floats top-right">
+        <button class="fbtn step-pill" data-act="steps"></button>
+        <button class="fbtn round" data-act="undo" aria-label="Отменить">${icon('undo')}</button>
+        <button class="fbtn round" data-act="redo" aria-label="Повторить">${icon('redo')}</button>
+      </div>
+      <button class="fnote" data-act="note"></button>
       <div class="hint"></div>
-      <div class="present-ui">
-        <button class="icon-btn present-close" data-act="present-exit" aria-label="Закрыть показ">${icon('close')}</button>
-        <div class="present-note"></div>
-        <div class="present-ctrl">
-          <button class="icon-btn big" data-act="prev">${icon('prev')}</button>
-          <button class="play-btn" data-act="play">${icon('play')}</button>
-          <button class="icon-btn big" data-act="next">${icon('next')}</button>
-          <span class="step-label"></span>
-        </div>
-      </div>
     </div>
-    <div class="side">
-      <div class="variants chips scroll"></div>
-      <button class="note-row" data-act="note"></button>
-      <div class="stepbar">
-        <button class="icon-btn" data-act="prev" aria-label="Предыдущий шаг">${icon('prev')}</button>
-        <button class="step-label pill" data-act="steps"></button>
+    <div class="controls">
+      <div class="ctl-row tools"></div>
+      <div class="ctl-row playrow">
+        <button class="cbtn" data-act="prev" aria-label="Предыдущий шаг">${icon('prev')}</button>
         <button class="play-btn" data-act="play" aria-label="Воспроизвести">${icon('play')}</button>
-        <button class="icon-btn" data-act="next" aria-label="Следующий шаг">${icon('next')}</button>
-        <button class="speed pill" data-act="speed">1×</button>
-        <span class="grow"></span>
-        <button class="add-step" data-act="add-step">${icon('plus')}<span>Шаг</span></button>
-      </div>
-      <div class="dock tools"></div>
-      <div class="dock actions">
-        <button data-act="add-home"><span class="ic-wrap home">${icon('person')}</span><span>Свой</span></button>
-        <button data-act="add-away"><span class="ic-wrap away">${icon('person')}</span><span>Соперник</span></button>
-        <button data-act="ball"><span class="ic-wrap ball">${icon('ball')}</span><span class="ball-label">Мяч</span></button>
-        <button data-act="straight"><span class="ic-wrap">${icon('curve')}</span><span class="straight-label">Кривые</span></button>
-        <button data-act="present"><span class="ic-wrap">${icon('present')}</span><span>Показ</span></button>
+        <button class="cbtn" data-act="next" aria-label="Следующий шаг">${icon('next')}</button>
+        <button class="cbtn speed" data-act="speed" aria-label="Скорость">1×</button>
+        <button class="cbtn add-step" data-act="add-step">${icon('plus')}<span>Шаг</span></button>
+        <button class="cbtn" data-act="clear-lines" aria-label="Стереть линии">${icon('sweep')}<span>Стереть</span></button>
+        <button class="cbtn" data-act="more" aria-label="Ещё">${icon('more')}<span>Ещё</span></button>
       </div>
     </div>
   </div>`);
@@ -87,12 +74,11 @@ export function openEditor(root, { tactic: initial, onBack, onSave }) {
 
   const canvas = el.querySelector('canvas.board');
   const ctx = canvas.getContext('2d');
-  const wrap = el.querySelector('.board-wrap');
   const toolsEl = el.querySelector('.tools');
   for (const t of TOOLS) {
-    const b = h(`<button data-tool="${t.id}"><span class="ic-wrap">${icon(t.icon)}</span><span>${t.label}</span></button>`);
-    toolsEl.append(b);
+    toolsEl.append(h(`<button class="cbtn" data-tool="${t.id}">${icon(t.icon)}<span>${t.label}</span></button>`));
   }
+  toolsEl.append(h(`<button class="cbtn add" data-act="add">${icon('person')}<span>Добавить</span></button>`));
 
   // ---------- История и сохранение ----------
   let saveTimer;
@@ -252,7 +238,7 @@ export function openEditor(root, { tactic: initial, onBack, onSave }) {
   };
 
   canvas.addEventListener('pointerdown', (e) => {
-    if (pointer || presenting || !geom) return;
+    if (pointer || !geom) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     try { canvas.setPointerCapture(e.pointerId); } catch { /* синтетические события */ }
     const start = courtPoint(e);
@@ -495,67 +481,48 @@ export function openEditor(root, { tactic: initial, onBack, onSave }) {
 
   function paint() {
     const dpr = window.devicePixelRatio || 1;
-    const w = wrap.clientWidth, hgt = wrap.clientHeight;
+    const w = canvas.clientWidth, hgt = canvas.clientHeight;
     if (!w || !hgt) return;
     if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(hgt * dpr)) {
       canvas.width = Math.round(w * dpr);
       canvas.height = Math.round(hgt * dpr);
-      canvas.style.width = `${w}px`;
-      canvas.style.height = `${hgt}px`;
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, hgt);
     const fs = frames();
     const i = fi();
-    const pad = presenting ? 0 : 4;
-    geom = drawBoard(ctx, { x: pad, y: pad, w: w - 2 * pad, h: hgt - 2 * pad }, tactic.court, fs[i], {
-      next: fs[i + 1], progress: player.progress, draft, highlight,
+    const rotate = orientation === 'auto' ? 'auto' : orientation === 'horizontal';
+    geom = drawBoard(ctx, { x: 0, y: 0, w, h: hgt }, tactic.court, fs[i], {
+      next: fs[i + 1], progress: player.progress, draft, highlight, rotate, minTokenPx: 14,
     });
   }
 
   const ro = new ResizeObserver(() => paint());
-  ro.observe(wrap);
+  ro.observe(canvas);
 
   // ---------- Панели ----------
   function updateStepbar() {
     const n = frames().length;
-    el.querySelectorAll('.step-label').forEach((s) => { s.textContent = `Шаг ${fi() + 1}/${n}`; });
-    el.querySelectorAll('[data-act="play"]').forEach((b) => {
-      b.innerHTML = icon(player.playing ? 'pause' : 'play');
-      b.disabled = n < 2;
-    });
-    el.querySelectorAll('[data-act="prev"]').forEach((b) => { b.disabled = fi() === 0 && !player.animating; });
-    el.querySelectorAll('[data-act="next"]').forEach((b) => { b.disabled = fi() >= n - 1; });
-    el.querySelector('.present-note').textContent = frame().note || '';
-    const note = el.querySelector('.note-row');
-    note.innerHTML = `${icon('note')}<span>${frame().note ? esc(frame().note) : '<i>Комментарий к шагу…</i>'}</span>`;
+    el.querySelector('.step-pill').textContent = `Шаг ${fi() + 1}/${n}`;
+    const play = el.querySelector('[data-act="play"]');
+    play.innerHTML = icon(player.playing ? 'pause' : 'play');
+    play.disabled = n < 2;
+    el.querySelector('[data-act="prev"]').disabled = fi() === 0 && !player.animating;
+    el.querySelector('[data-act="next"]').disabled = fi() >= n - 1;
+    const note = el.querySelector('.fnote');
+    note.textContent = frame().note || '';
+    note.hidden = !frame().note;
   }
 
   function refresh() {
     el.querySelector('.t-name').textContent = tactic.name;
-    el.querySelector('.t-cat').textContent = tactic.category || 'Нажмите, чтобы изменить';
+    el.querySelector('.t-var').textContent = tactic.variants.length > 1 ? variant().name : '';
     el.querySelector('[data-act="undo"]').disabled = !undoStack.length;
-    el.querySelector('[data-act="redo"]').disabled = !redoStack.length;
-    el.querySelector('.speed').textContent = player.speed === 2 ? '2×' : player.speed === 0.5 ? '½×' : '1×';
-
-    const vEl = el.querySelector('.variants');
-    vEl.innerHTML = '';
-    tactic.variants.forEach((v, i) => {
-      const c = h(`<button class="chip ${i === vi ? 'on' : ''}">${esc(v.name)}${i === vi ? icon('edit', 'xs') : ''}</button>`);
-      c.addEventListener('click', () => (i === vi ? variantMenu(i) : selectVariant(i)));
-      vEl.append(c);
-    });
-    const addV = h(`<button class="chip ghost">${icon('plus', 'xs')}Вариант</button>`);
-    addV.addEventListener('click', () => sheet('Новый вариант', [
-      { icon: 'copy', label: 'Копия текущего варианта', action: () => addVariant(true) },
-      { icon: 'court', label: 'С начальной расстановки', action: () => addVariant(false) },
-    ]));
-    vEl.append(addV);
-
+    const redoBtn = el.querySelector('[data-act="redo"]');
+    redoBtn.hidden = !redoStack.length;
+    el.querySelector('.speed').textContent = speedLabel(player.speed);
+    el.querySelector('[data-act="clear-lines"]').disabled = !frame().lines.length;
     toolsEl.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === tool));
-    el.querySelector('.ball-label').textContent = frame().ball ? 'Убрать мяч' : 'Мяч';
-    el.querySelector('[data-act="straight"] .ic-wrap').innerHTML = icon(straight ? 'straight' : 'curve');
-    el.querySelector('.straight-label').textContent = straight ? 'Прямые' : 'Кривые';
     updateStepbar();
     draw();
   }
@@ -567,28 +534,54 @@ export function openEditor(root, { tactic: initial, onBack, onSave }) {
     refresh();
   }
 
-  function variantMenu(i) {
-    sheet(tactic.variants[i].name, [
-      { icon: 'edit', label: 'Переименовать', action: () => form('Название варианта', [
-        { name: 'name', label: 'Название', value: tactic.variants[i].name, required: true },
-      ], { onSubmit: (v) => v.name.trim() && commit(() => { tactic.variants[i].name = v.name.trim(); }) }) },
-      { icon: 'copy', label: 'Дублировать', action: () => addVariant(true) },
-      {
-        icon: 'trash', label: 'Удалить вариант', danger: true, disabled: tactic.variants.length <= 1,
-        action: () => confirmDialog(`Удалить «${tactic.variants[i].name}»?`, 'Все шаги этого варианта будут удалены.', 'Удалить', () => {
+  /** Меню по нажатию на название: варианты и свойства тактики. */
+  function tacticMenu() {
+    const items = tactic.variants.map((v, i) => ({
+      icon: 'court', label: v.name, active: i === vi, action: () => selectVariant(i),
+    }));
+    items.push(
+      { icon: 'copy', label: 'Новый вариант: копия текущего', action: () => addVariant(true) },
+      { icon: 'plus', label: 'Новый вариант: с начальной расстановки', action: () => addVariant(false) },
+      { icon: 'edit', label: `Переименовать «${variant().name}»`, action: () => form('Название варианта', [
+        { name: 'name', label: 'Название', value: variant().name, required: true },
+      ], { onSubmit: (v) => v.name.trim() && commit(() => { variant().name = v.name.trim(); }) }) },
+    );
+    if (tactic.variants.length > 1) {
+      items.push({
+        icon: 'trash', label: `Удалить «${variant().name}»`, danger: true,
+        action: () => confirmDialog(`Удалить «${variant().name}»?`, 'Все шаги этого варианта будут удалены.', 'Удалить', () => {
+          const i = vi;
           commit(() => tactic.variants.splice(i, 1));
-          vi = Math.max(0, Math.min(vi > i ? vi - 1 : vi, tactic.variants.length - 1));
+          vi = Math.max(0, Math.min(i, tactic.variants.length - 1));
           player.goTo(0);
           refresh();
         }),
-      },
-    ]);
+      });
+    }
+    items.push('divider', { icon: 'edit', label: 'Название и описание тактики', action: infoDialog });
+    sheet(tactic.name, items);
   }
 
   function stepsMenu() {
     sheet('Шаги', frames().map((f, i) => ({
       label: `${i + 1}. ${f.note || `Шаг ${i + 1}`}`, active: i === fi(), action: () => player.goTo(i),
     })));
+  }
+
+  function addMenu() {
+    sheet('Добавить', [
+      { icon: 'person', label: 'Своего игрока', action: () => addPlayer('home') },
+      { icon: 'person', label: 'Соперника', action: () => addPlayer('away') },
+      { icon: 'ball', label: frame().ball ? 'Убрать мяч' : 'Мяч', action: toggleBall },
+      'divider',
+      { icon: 'help', label: 'Совет: удержите палец на пустом месте поля — игрок появится прямо там', disabled: true },
+    ]);
+  }
+
+  function noteDialog() {
+    form(`Комментарий к шагу ${fi() + 1}`, [
+      { name: 'note', label: 'Что происходит на этом шаге', type: 'textarea', value: frame().note },
+    ], { onSubmit: (v) => commit(() => { frame().note = v.note.trim(); }) });
   }
 
   function infoDialog() {
@@ -605,50 +598,84 @@ export function openEditor(root, { tactic: initial, onBack, onSave }) {
     });
   }
 
+  function restart(frame0) {
+    commit(() => { variant().frames = [frame0]; });
+    player.goTo(0);
+    refresh();
+  }
+
   function clearMenu() {
     sheet('Очистить', [
       { icon: 'sweep', label: 'Стереть линии на этом шаге', action: () => commit(() => { frame().lines = []; }) },
-      { icon: 'trash', label: 'Очистить всю схему (пустая площадка)', danger: true, action: () => { commit(() => { variant().frames = [{ tokens: [], lines: [], ball: null, note: '' }]; }); player.goTo(0); refresh(); } },
-      { icon: 'court', label: 'Заново: 5 на 5', action: () => { commit(() => { variant().frames = [startingFrame(5, 5)]; }); player.goTo(0); refresh(); } },
-      { icon: 'court', label: 'Заново: только нападение', action: () => { commit(() => { variant().frames = [startingFrame(5, 0)]; }); player.goTo(0); refresh(); } },
+      { icon: 'trash', label: 'Очистить всю схему (пустая площадка)', danger: true, action: () => restart({ tokens: [], lines: [], ball: null, note: '' }) },
+      { icon: 'court', label: 'Заново: 5 на 5', action: () => restart(startingFrame(5, 5)) },
+      { icon: 'court', label: 'Заново: только нападение', action: () => restart(startingFrame(5, 0)) },
     ]);
   }
 
   async function exportImage(all) {
     try {
       const c = all ? renderSheet(tactic, variant()) : renderStep(tactic, variant(), fi());
-      const r = await shareOrDownload(c, tactic);
-      if (r === 'downloaded') toast('Картинка сохранена в загрузки');
+      const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+      offerFile(blob, `${safeFileName(tactic.name)}.png`, { title: 'Картинка готова', kind: 'image' });
     } catch (e) {
       toast(`Не удалось: ${e.message}`);
     }
   }
 
-  function moreMenu() {
-    sheet(null, [
-      { icon: 'edit', label: 'Название и описание', action: infoDialog },
-      { icon: 'court', label: tactic.court === 'half' ? 'Показать всю площадку' : 'Показать половину площадки', action: () => commit(() => { tactic.court = tactic.court === 'half' ? 'full' : 'half'; }) },
-      { icon: 'sweep', label: 'Очистить…', action: clearMenu },
-      { icon: 'trash', label: `Удалить шаг ${fi() + 1}`, disabled: frames().length <= 1, action: () => confirmDialog(`Удалить шаг ${fi() + 1}?`, 'Игроки и линии этого шага пропадут.', 'Удалить', deleteStep) },
-      'divider',
-      { icon: 'image', label: 'Картинка: этот шаг', action: () => exportImage(false) },
-      { icon: 'image', label: 'Картинка: все шаги на одном листе', action: () => exportImage(true) },
-      { icon: 'link', label: 'Отправить ссылкой', action: () => shareTacticLink(tactic) },
-      { icon: 'download', label: 'Сохранить файлом (.json)', action: () => shareJsonFile(tactic, `${safeFileName(tactic.name)}.json`) },
-    ]);
+  async function exportVideo() {
+    if (!videoSupported()) return toast('Этот браузер не умеет записывать видео');
+    player.stop();
+    const ctrl = new AbortController();
+    const pd = progressDialog(`Запись видео · скорость ${speedLabel(player.speed)}`, () => ctrl.abort());
+    try {
+      const res = await recordVideo(tactic, variant(), { speed: player.speed, onProgress: (p) => pd.set(p), signal: ctrl.signal });
+      if (!res || pd.cancelled) return;
+      await pd.finish();
+      offerFile(res.blob, `${safeFileName(tactic.name)}.${res.ext}`, { title: 'Видео готово', kind: 'video' });
+    } catch (e) {
+      await pd.finish();
+      toast(`Не удалось записать видео: ${e.message}`);
+    }
   }
 
-  function setPresenting(on) {
-    presenting = on;
-    player.stop();
-    el.classList.toggle('presenting', on);
-    if (on) {
-      document.documentElement.requestFullscreen?.().catch(() => {});
-    } else if (document.fullscreenElement) {
-      document.exitFullscreen?.().catch(() => {});
+  function setOrientation(o) {
+    orientation = o;
+    setPref('orientation', o);
+    paint();
+  }
+
+  const fullscreenAvailable = () => document.fullscreenEnabled && !matchMedia('(display-mode: standalone)').matches;
+
+  function moreMenu() {
+    const names = { auto: 'авто', vertical: 'вертикально', horizontal: 'боком' };
+    const nextOrient = { auto: 'horizontal', horizontal: 'vertical', vertical: 'auto' }[orientation];
+    const items = [
+      { icon: 'note', label: frame().note ? 'Изменить комментарий к шагу' : 'Комментарий к шагу', action: noteDialog },
+      {
+        icon: straight ? 'curve' : 'straight', label: straight ? 'Рисовать от руки' : 'Рисовать прямыми линиями',
+        action: () => { straight = !straight; showHint(straight ? 'Линии рисуются прямыми' : 'Линии рисуются от руки'); },
+      },
+      { icon: 'court', label: tactic.court === 'half' ? 'Вся площадка' : 'Половина площадки', action: () => commit(() => { tactic.court = tactic.court === 'half' ? 'full' : 'half'; }) },
+      { icon: 'court', label: `Положение поля: ${names[orientation]} → ${names[nextOrient]}`, action: () => setOrientation(nextOrient) },
+    ];
+    if (fullscreenAvailable()) {
+      items.push({
+        icon: 'present', label: document.fullscreenElement ? 'Выйти из полноэкранного режима' : 'Во весь экран', immediate: true,
+        action: () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {}),
+      });
     }
-    setTimeout(paint, 50);
-    refresh();
+    items.push(
+      { icon: 'trash', label: `Удалить шаг ${fi() + 1}`, disabled: frames().length <= 1, action: () => confirmDialog(`Удалить шаг ${fi() + 1}?`, 'Игроки и линии этого шага пропадут.', 'Удалить', deleteStep) },
+      { icon: 'sweep', label: 'Очистить…', action: clearMenu },
+      'divider',
+      { icon: 'video', label: 'Сохранить видео', disabled: frames().length < 2, action: exportVideo },
+      { icon: 'image', label: 'Картинка: этот шаг', action: () => exportImage(false) },
+      { icon: 'image', label: 'Картинка: все шаги на одном листе', action: () => exportImage(true) },
+      { icon: 'link', label: 'Отправить ссылкой', immediate: true, action: () => shareTacticLink(tactic) },
+      { icon: 'download', label: 'Сохранить файлом (.json)', immediate: true, action: () => shareJsonFile(tactic, `${safeFileName(tactic.name)}.json`) },
+    );
+    sheet(null, items);
   }
 
   // ---------- Кнопки ----------
@@ -665,25 +692,25 @@ export function openEditor(root, { tactic: initial, onBack, onSave }) {
     const count = frames().length;
     switch (b.dataset.act) {
       case 'back': leave(); break;
-      case 'info': infoDialog(); break;
+      case 'tactic-menu': tacticMenu(); break;
+      case 'add': addMenu(); break;
+      case 'clear-lines': commit(() => { frame().lines = []; }); showHint('Линии стёрты. Вернуть — кнопка «Отменить» сверху.'); break;
       case 'undo': undo(); break;
       case 'redo': redo(); break;
       case 'more': moreMenu(); break;
-      case 'note': form(`Комментарий к шагу ${fi() + 1}`, [
-        { name: 'note', label: 'Что происходит на этом шаге', type: 'textarea', value: frame().note },
-      ], { onSubmit: (v) => commit(() => { frame().note = v.note.trim(); }) }); break;
+      case 'note': noteDialog(); break;
       case 'prev': player.prev(); break;
       case 'next': player.next(count); break;
       case 'play': player.toggle(count); break;
       case 'steps': stepsMenu(); break;
-      case 'speed': player.speed = player.speed === 1 ? 2 : player.speed === 2 ? 0.5 : 1; refresh(); break;
+      case 'speed': {
+        player.speed = SPEEDS[(SPEEDS.indexOf(player.speed) + 1) % SPEEDS.length];
+        setPref('speed', player.speed);
+        showHint(`Скорость воспроизведения ${speedLabel(player.speed)}`);
+        refresh();
+        break;
+      }
       case 'add-step': addStep(); showHint('Новый шаг: игроки встали в концы своих стрелок. Рисуйте следующее действие.'); break;
-      case 'add-home': addPlayer('home'); break;
-      case 'add-away': addPlayer('away'); break;
-      case 'ball': toggleBall(); break;
-      case 'straight': straight = !straight; refresh(); showHint(straight ? 'Линии рисуются прямыми' : 'Линии рисуются от руки'); break;
-      case 'present': setPresenting(true); break;
-      case 'present-exit': setPresenting(false); break;
       default: break;
     }
   });
@@ -695,7 +722,6 @@ export function openEditor(root, { tactic: initial, onBack, onSave }) {
     else if (e.key === ' ') { e.preventDefault(); player.toggle(frames().length); }
     else if (e.key === 'ArrowRight') player.next(frames().length);
     else if (e.key === 'ArrowLeft') player.prev();
-    else if (e.key === 'Escape' && presenting) setPresenting(false);
   };
   document.addEventListener('keydown', onKey);
   const onHide = () => { if (document.visibilityState === 'hidden') saveNow(); };
